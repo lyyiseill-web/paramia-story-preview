@@ -538,11 +538,33 @@ function startAfterComic() {
   autoTimer = setTimeout(() => beginOpening(false), 1000);
 }
 setTimeout(() => { comicReady = true; startAfterComic(); }, 5060);
-document.addEventListener('visibilitychange', startAfterComic);
 function pause(){if(ad.dataset.state==='hand'){resetHold();hand.hidden=true;state('paused');return}if(ad.dataset.state==='playing'&&!clip.ended){clip.pause();state('paused')}}
-document.addEventListener('visibilitychange',()=>{if(document.hidden)pause()});
+let resumeOnReturn = false;
+let lastRecovery = -Infinity;
+function handleVisibility() {
+  if (document.hidden || !scoreViewable) {
+    if (ad.dataset.state === 'playing' && !clip.ended) resumeOnReturn = true;
+    pause();
+  } else {
+    if (resumeOnReturn && ad.dataset.state === 'paused') play();
+    resumeOnReturn = false;
+    startAfterComic();
+  }
+}
+clip.addEventListener('pause', async () => {
+  if (ad.dataset.state !== 'playing' || !clip.paused || clip.ended || document.hidden || !scoreViewable) return;
+  const source = clip.src;
+  if (performance.now() - lastRecovery >= 1500) {
+    lastRecovery = performance.now();
+    // Muted playback can continue when another player owns audio focus.
+    clip.muted = true;
+    try { await clip.play(); return; } catch {}
+  }
+  if (clip.src === source && clip.paused && ad.dataset.state === 'playing') state('paused');
+});
+document.addEventListener('visibilitychange', handleVisibility);
 const sdk=window.mraid;
-function connect(){if(sdk.isViewable)scoreViewable=sdk.isViewable();syncScore();sdk.addEventListener('viewableChange',visible=>{scoreViewable=visible;if(!visible)pause();else startAfterComic();syncScore()})}
+function connect(){if(sdk.isViewable)scoreViewable=sdk.isViewable();syncScore();sdk.addEventListener('viewableChange',visible=>{scoreViewable=visible;handleVisibility();syncScore()})}
 if(sdk&&sdk.addEventListener){if(sdk.getState&&sdk.getState()==='loading')sdk.addEventListener('ready',connect);else connect()}
 const startingPoster=document.querySelector('video').poster;
 if(startingPoster)ad.style.setProperty('--scene-bg','url('+startingPoster+')');
